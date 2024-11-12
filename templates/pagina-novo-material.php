@@ -1,66 +1,26 @@
-<?php
+<?php 
 if (!defined('ABSPATH')) exit;
 
-// Handler do formulário
-if (isset($_POST['criar_material'])) {
-    if (check_admin_referer('gma_novo_material', 'gma_novo_material_nonce')) {
-        $campanha_id = intval($_POST['campanha_id']);
-        $copy = sanitize_textarea_field($_POST['copy']);
-        $link_canva = esc_url_raw($_POST['link_canva']);
-        $tipo_midia = sanitize_text_field($_POST['tipo_midia']);
-        
-        if ($tipo_midia === 'video') {
-            $video_url = esc_url_raw($_POST['video_url']);
-            $material_id = gma_criar_material(
-                $campanha_id,
-                '',
-                $copy,
-                $link_canva,
-                null,
-                'video',
-                $video_url
-            );
-        } else {
-            $imagem_url = esc_url_raw($_POST['imagem_url']);
-            $arquivo_id = intval($_POST['arquivo_id']);
-            $material_id = gma_criar_material(
-                $campanha_id,
-                $imagem_url,
-                $copy,
-                $link_canva,
-                $arquivo_id,
-                'imagem'
-            );
-        }
-
-        if ($material_id) {
-            wp_redirect(admin_url('admin.php?page=gma-materiais&message=created'));
-            exit;
-        }
-    }
-}
-
-// Enqueue scripts
+// Carrega o Media Uploader
 wp_enqueue_media();
-wp_enqueue_script('jquery');
 
-// Localize script
+// Localiza os scripts para AJAX
 wp_localize_script('jquery', 'gma_ajax', array(
     'ajaxurl' => admin_url('admin-ajax.php'),
-    'nonce' => wp_create_nonce('gma_novo_material')
+    'nonce' => wp_create_nonce('gma_copy_suggestions')
 ));
 ?>
 
-<!-- HTML Structure -->
 <div class="gma-create-wrap">
     <div class="gma-create-container">
         <h1 class="gma-create-title">🎨 Criar Novo Material</h1>
+
         <div class="gma-create-card">
             <form method="post" class="gma-create-form" id="gma-material-form">
                 <?php wp_nonce_field('gma_novo_material', 'gma_novo_material_nonce'); ?>
                 
                 <div class="gma-form-grid">
-                    <!-- Campanha -->
+                    <!-- Seleção de Campanha -->
                     <div class="gma-form-group">
                         <label for="campanha_id">
                             <i class="dashicons dashicons-megaphone"></i> Campanha
@@ -81,56 +41,108 @@ wp_localize_script('jquery', 'gma_ajax', array(
                         </select>
                     </div>
 
-                    <!-- Tipo de Mídia -->
-                    <div class="gma-form-group">
-                        <label for="tipo_midia">
-                            <i class="dashicons dashicons-admin-media"></i> Tipo de Mídia
-                        </label>
-                        <select name="tipo_midia" id="tipo_midia" required>
-                            <option value="imagem">Imagem</option>
-                            <option value="video">Vídeo</option>
-                        </select>
-                    </div>
-
                     <!-- Upload de Imagem -->
-                    <div class="gma-form-group" id="imagem-upload-group">
+                    <div class="gma-form-group">
                         <label for="gma-imagem-url">
                             <i class="dashicons dashicons-format-image"></i> Imagem
                         </label>
-                        <button type="button" class="button" id="gma-upload-btn">Escolher Imagem</button>
-                        <input type="hidden" name="imagem_url" id="gma-imagem-url">
-                        <input type="hidden" name="arquivo_id" id="gma-arquivo-id">
-                        <div id="imagem-preview" class="gma-image-preview"></div>
-                    </div>
-
-                    <!-- Upload de Vídeo -->
-                    <div class="gma-form-group" id="video-upload-group" style="display: none;">
-                        <label for="gma-video-url">
-                            <i class="dashicons dashicons-video-alt3"></i> Vídeo
-                        </label>
                         <div class="gma-upload-container">
-                            <input type="text" name="video_url" id="gma-video-url" class="gma-input" readonly>
-                            <button type="button" id="gma-video-upload-btn" class="gma-button secondary">
-                                <i class="dashicons dashicons-upload"></i> Selecionar Vídeo
+                            <input type="text" name="imagem_url" id="gma-imagem-url" 
+                                   class="gma-input" required readonly>
+                            <input type="hidden" name="arquivo_id" id="gma-arquivo-id">
+                            <button type="button" id="gma-upload-btn" class="gma-button secondary">
+                                <i class="dashicons dashicons-upload"></i> Selecionar
                             </button>
                         </div>
-                        <div id="gma-video-preview" class="gma-video-preview"></div>
+                        <div id="gma-image-preview" class="gma-image-preview"></div>
                     </div>
 
-                    <!-- Copy -->
+                    <!-- Copy do Material -->
                     <div class="gma-form-group full-width">
                         <label for="copy">
                             <i class="dashicons dashicons-editor-paste-text"></i> Copy
                         </label>
                         <textarea name="copy" id="copy" rows="5" required></textarea>
+                        <div class="gma-character-count">
+                            <span id="char-count">0</span> caracteres
+                        </div>
+                        <div class="gma-form-group full-width">
+    <button type="button" id="get-suggestions" class="gma-button secondary">
+        <i class="dashicons dashicons-admin-customizer"></i> Obter Sugestões AI
+    </button>
+    <div id="suggestions-container" style="display: none;">
+        <h3>Sugestões da IA</h3>
+        <div id="suggestions-content"></div>
+    </div>
+</div>
+
+<script>
+jQuery(document).ready(function($) {
+    $('#get-suggestions').on('click', function() {
+        const copy = $('#copy').val();
+        const button = $(this);
+        
+        if (!copy) {
+            alert('Por favor, insira algum texto primeiro.');
+            return;
+        }
+        
+        button.prop('disabled', true).text('Obtendo sugestões...');
+        
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'gma_get_copy_suggestions',
+                nonce: '<?php echo wp_create_nonce("gma_copy_suggestions"); ?>',
+                copy: copy
+            },
+            success: function(response) {
+                if (response.success) {
+                    $('#suggestions-content').html(response.data.suggestions);
+                    $('#suggestions-container').slideDown();
+                } else {
+                    alert('Falha ao obter sugestões. Tente novamente.');
+                }
+            },
+            error: function() {
+                alert('Erro ao conectar com o servidor.');
+            },
+            complete: function() {
+                button.prop('disabled', false).text('Obter Sugestões AI');
+            }
+        });
+    });
+});
+</script>
+
+<style>
+#suggestions-container {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    border-left: 4px solid #4a90e2;
+}
+
+#suggestions-content {
+    white-space: pre-line;
+    line-height: 1.5;
+}
+
+#get-suggestions {
+    margin-top: 10px;
+}
+</style>
                     </div>
 
-                    <!-- Link Canva -->
+                    <!-- Link do Canva (apenas para campanhas de marketing) -->
                     <div class="gma-form-group full-width" id="canva-group" style="display: none;">
                         <label for="link_canva">
                             <i class="dashicons dashicons-art"></i> Link do Canva
                         </label>
-                        <input type="url" name="link_canva" id="link_canva" class="gma-input">
+                        <input type="url" name="link_canva" id="link_canva" 
+                               class="gma-input" placeholder="https://www.canva.com/...">
                     </div>
                 </div>
 
@@ -138,10 +150,13 @@ wp_localize_script('jquery', 'gma_ajax', array(
                     <button type="submit" name="criar_material" class="gma-button primary">
                         <i class="dashicons dashicons-saved"></i> Criar Material
                     </button>
-                    <a href="<?php echo admin_url('admin.php?page=gma-materiais'); ?>" class="gma-button secondary">
+                    <a href="<?php echo admin_url('admin.php?page=gma-materiais'); ?>" 
+                       class="gma-button secondary">
                         <i class="dashicons dashicons-arrow-left-alt"></i> Voltar
                     </a>
+                  
                 </div>
+              
             </form>
         </div>
     </div>
@@ -149,15 +164,17 @@ wp_localize_script('jquery', 'gma_ajax', array(
 
 <script>
 jQuery(document).ready(function($) {
-    // Controle de tipo de mídia
-    $('#tipo_midia').on('change', function() {
-        var tipoMidia = $(this).val();
-        if (tipoMidia === 'video') {
-            $('#imagem-upload-group').hide();
-            $('#video-upload-group').show();
+    // Controle de exibição dos campos baseado no tipo de campanha
+    $('#campanha_id').on('change', function() {
+        var selectedOption = $(this).find('option:selected');
+        var tipoCampanha = selectedOption.data('tipo');
+        
+        if (tipoCampanha === 'marketing') {
+            $('#canva-group').show();
+            $('#link_canva').prop('required', false);
         } else {
-            $('#imagem-upload-group').show();
-            $('#video-upload-group').hide();
+            $('#canva-group').hide();
+            $('#link_canva').prop('required', false);
         }
     });
 
@@ -165,90 +182,68 @@ jQuery(document).ready(function($) {
     $('#gma-upload-btn').click(function(e) {
         e.preventDefault();
         
-        var image_frame = wp.media({
+        var custom_uploader = wp.media({
             title: 'Selecionar Imagem',
-            multiple: false,
-            library: {
-                type: 'image'
-            }
+            button: {
+                text: 'Usar esta imagem'
+            },
+            multiple: false
         });
 
-        image_frame.on('select', function() {
-            var attachment = image_frame.state().get('selection').first().toJSON();
+        custom_uploader.on('select', function() {
+            var attachment = custom_uploader.state().get('selection').first().toJSON();
             $('#gma-imagem-url').val(attachment.url);
             $('#gma-arquivo-id').val(attachment.id);
-            $('#imagem-preview').html('<img src="' + attachment.url + '" alt="Preview">');
+            $('#gma-image-preview').html('<img src="' + attachment.url + '" alt="Preview">');
         });
 
-        image_frame.open();
+        custom_uploader.open();
     });
 
-    // Upload de vídeo
-    $('#gma-video-upload-btn').click(function(e) {
-        e.preventDefault();
-        
-        var video_frame = wp.media({
-            title: 'Selecionar Vídeo',
-            multiple: false,
-            library: {
-                type: 'video'
-            }
-        });
-
-        video_frame.on('select', function() {
-            var attachment = video_frame.state().get('selection').first().toJSON();
-            $('#gma-video-url').val(attachment.url);
-            $('#gma-video-preview').html(
-                '<video width="300" controls>' +
-                '<source src="' + attachment.url + '" type="' + attachment.mime + '">' +
-                'Seu navegador não suporta o elemento de vídeo.' +
-                '</video>'
-            );
-        });
-
-        video_frame.open();
+    // Contador de caracteres
+    $('#copy').on('input', function() {
+        var charCount = $(this).val().length;
+        $('#char-count').text(charCount);
     });
 
-    // Controle do campo Canva
-    $('#campanha_id').on('change', function() {
-        var tipoCampanha = $(this).find('option:selected').data('tipo');
-        if (tipoCampanha === 'marketing') {
-            $('#canva-group').show();
-        } else {
-            $('#canva-group').hide();
-        }
-    });
+    
 
     // Validação do formulário
     $('#gma-material-form').on('submit', function(e) {
-        e.preventDefault();
-        
-        var tipoMidia = $('#tipo_midia').val();
         var isValid = true;
+        
+        $(this).find('[required]').each(function() {
+            if (!$(this).val()) {
+                isValid = false;
+                $(this).addClass('error').shake();
+            } else {
+                $(this).removeClass('error');
+            }
+        });
 
-        if (!$('#campanha_id').val() || !$('#copy').val()) {
+        if (!isValid) {
+            e.preventDefault();
             alert('Por favor, preencha todos os campos obrigatórios.');
-            return false;
         }
-
-        if (tipoMidia === 'video' && !$('#gma-video-url').val()) {
-            alert('Por favor, selecione um vídeo.');
-            return false;
-        }
-
-        if (tipoMidia === 'imagem' && !$('#gma-imagem-url').val()) {
-            alert('Por favor, selecione uma imagem.');
-            return false;
-        }
-
-        this.submit();
     });
+
+    // Efeito shake para campos com erro
+    $.fn.shake = function() {
+        this.each(function() {
+            $(this).css('position', 'relative');
+            for(var i = 0; i < 3; i++) {
+                $(this).animate({left: -10}, 50)
+                       .animate({left: 10}, 50)
+                       .animate({left: 0}, 50);
+            }
+        });
+    };
 });
+  
 </script>
 
-<style>
-/* Seus estilos CSS aqui - mantido o mesmo que você já tem */
-</style>
+
+
 <style>
 :root {
     --primary-color: #4a90e2;
@@ -329,7 +324,6 @@ jQuery(document).ready(function($) {
 .gma-upload-container {
     display: flex;
     gap: 10px;
-    margin-bottom: 15px;
 }
 
 .gma-image-preview {
@@ -339,29 +333,17 @@ jQuery(document).ready(function($) {
     overflow: hidden;
 }
 
-.gma-image-preview img,
-.gma-video-preview video {
+.gma-image-preview img {
     width: 100%;
     height: auto;
     display: block;
-    border-radius: var(--border-radius);
 }
 
-.gma-image-preview-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 10px;
-    margin-top: 10px;
-}
-
-.carrossel-item {
-    position: relative;
-}
-
-.carrossel-image {
-    width: 100%;
-    height: auto;
-    border-radius: var(--border-radius);
+.gma-character-count {
+    text-align: right;
+    font-size: 0.9em;
+    color: #666;
+    margin-top: 5px;
 }
 
 .gma-button {
@@ -424,71 +406,67 @@ jQuery(document).ready(function($) {
         justify-content: center;
     }
 }
-
-.error {
-    border-color: var(--danger-color) !important;
-}
-
-.shake {
-    animation: shake 0.5s linear;
-}
-
-@keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-10px); }
-    75% { transform: translateX(10px); }
-}
-
-.midia-uploads-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 10px;
-    margin-top: 10px;
-}
-
-.midia-item {
-    position: relative;
-}
-
-.midia-item img {
-    width: 100%;
-    height: auto;
-    border-radius: var(--border-radius);
-}
-
-.remove-midia {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: none;
-    border: none;
-    font-size: 1.2em;
-    color: #e74c3c;
-    cursor: pointer;
-}
-
-#suggestions-container {
-    margin-top: 15px;
-    border: 1px solid #ddd;
-    padding: 15px;
-    border-radius: var(--border-radius);
-}
-
-#suggestions-content {
-    margin-top: 10px;
-}
-  
-  .gma-video-preview {
-    margin-top: 10px;
-    max-width: 300px;
-    border-radius: var(--border-radius);
-    overflow: hidden;
-}
-
-.gma-video-preview video {
-    width: 100%;
-    height: auto;
-    display: block;
-}
 </style>
 
+<script>
+jQuery(document).ready(function($) {
+    // Upload de imagem
+    $('#gma-upload-btn').click(function(e) {
+        e.preventDefault();
+        
+        var custom_uploader = wp.media({
+            title: 'Selecionar Imagem',
+            button: {
+                text: 'Usar esta imagem'
+            },
+            multiple: false
+        });
+
+        custom_uploader.on('select', function() {
+            var attachment = custom_uploader.state().get('selection').first().toJSON();
+            $('#gma-imagem-url').val(attachment.url);
+            $('#gma-arquivo-id').val(attachment.id);
+            $('#gma-image-preview').html('<img src="' + attachment.url + '" alt="Preview">');
+        });
+
+        custom_uploader.open();
+    });
+
+    // Contador de caracteres
+    $('#copy').on('input', function() {
+        var charCount = $(this).val().length;
+        $('#char-count').text(charCount);
+    });
+
+    // Validação do formulário
+    $('#gma-material-form').on('submit', function(e) {
+        var isValid = true;
+        
+        $(this).find('[required]').each(function() {
+            if (!$(this).val()) {
+                isValid = false;
+                $(this).addClass('error').shake();
+            } else {
+                $(this).removeClass('error');
+            }
+        });
+
+        if (!isValid) {
+            e.preventDefault();
+            alert('Por favor, preencha todos os campos obrigatórios.');
+        }
+    });
+
+    // Efeito shake para campos com erro
+    $.fn.shake = function() {
+        this.each(function() {
+            $(this).css('position', 'relative');
+            for(var i = 0; i < 3; i++) {
+                $(this).animate({left: -10}, 50)
+                       .animate({left: 10}, 50)
+                       .animate({left: 0}, 50);
+            }
+        });
+    };
+});
+</script>
