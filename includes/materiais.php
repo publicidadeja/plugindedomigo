@@ -1,6 +1,4 @@
 <?php
-// Funções relacionadas a materiais
-
 function gma_criar_material($campanha_id, $imagem_url, $copy, $link_canva = '', $arquivo_id = null, $tipo_midia = 'imagem', $video_url = '') {
     global $wpdb;
     $tabela = $wpdb->prefix . 'gma_materiais';
@@ -15,7 +13,7 @@ function gma_criar_material($campanha_id, $imagem_url, $copy, $link_canva = '', 
         'data_criacao' => current_time('mysql')
     );
 
-    // Adiciona URL baseado no tipo de mídia
+    // Define a URL baseada no tipo de mídia
     if ($tipo_midia === 'video') {
         $dados['video_url'] = $video_url;
         $dados['imagem_url'] = ''; // Campo vazio para vídeos
@@ -34,7 +32,7 @@ function gma_render_material_preview($material) {
     if ($material->tipo_midia === 'video') {
         if (!empty($material->video_url)) {
             echo '<div class="gma-video-preview">';
-            echo '<video controls width="100%">';
+            echo '<video controls width="100%" preload="metadata">';
             echo '<source src="' . esc_url($material->video_url) . '" type="video/mp4">';
             echo 'Seu navegador não suporta o elemento de vídeo.';
             echo '</video>';
@@ -51,6 +49,7 @@ function gma_render_material_preview($material) {
     return ob_get_clean();
 }
 
+// Atualiza a função de manipulação do formulário
 function gma_handle_criar_material() {
     check_ajax_referer('gma_novo_material', 'nonce');
     
@@ -59,25 +58,38 @@ function gma_handle_criar_material() {
     $copy = sanitize_textarea_field($_POST['copy']);
     $link_canva = isset($_POST['link_canva']) ? esc_url_raw($_POST['link_canva']) : '';
     
-    if ($tipo_midia === 'imagem') {
-        $midias = sanitize_url($_POST['imagem_url']);
-    } elseif ($tipo_midia === 'video') {
-        $midias = sanitize_url($_POST['video_url']);
+    if ($tipo_midia === 'video') {
+        $video_url = sanitize_url($_POST['video_url']);
+        $resultado = gma_criar_material(
+            $campanha_id,
+            '', // imagem_url vazio
+            $copy,
+            $link_canva,
+            null,
+            'video',
+            $video_url
+        );
     } else {
-        $midias = array_map('sanitize_url', $_POST['carrossel_images']);
+        $imagem_url = sanitize_url($_POST['imagem_url']);
+        $resultado = gma_criar_material(
+            $campanha_id,
+            $imagem_url,
+            $copy,
+            $link_canva,
+            null,
+            'imagem'
+        );
     }
-    
-    $resultado = gma_criar_material($campanha_id, $midias, $copy, $link_canva, $tipo_midia);
     
     if ($resultado) {
         wp_send_json_success(array(
+            'message' => 'Material criado com sucesso',
             'redirect' => admin_url('admin.php?page=gma-materiais&message=created')
         ));
     } else {
         wp_send_json_error(array('message' => 'Erro ao criar material'));
     }
 }
-add_action('wp_ajax_gma_criar_material', 'gma_handle_criar_material');
 
 function gma_verificar_material_existente($campanha_id, $imagem_url, $copy, $link_canva) {
     global $wpdb;
