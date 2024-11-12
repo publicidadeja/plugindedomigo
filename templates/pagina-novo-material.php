@@ -40,6 +40,7 @@ if (isset($_POST['criar_material'])) {
 
 // Carrega o Media Uploader
 wp_enqueue_media();
+wp_enqueue_script('gma-media-upload', plugins_url('/assets/js/media-upload.js', dirname(__FILE__)), array('jquery'), '1.0', true);
 
 // Carrega o jQuery e script admin
 wp_enqueue_script('jquery');
