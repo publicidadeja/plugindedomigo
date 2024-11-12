@@ -46,20 +46,24 @@ $('#gma-video-upload-btn').on('click', function(e) {
     }
 
     mediaUploader = wp.media({
-        title: gmaData.wpMediaTitle,
+        title: 'Escolha ou faça upload de um vídeo',
         button: {
-            text: gmaData.wpMediaButton
+            text: 'Usar este vídeo'
         },
+        multiple: false,
         library: {
             type: 'video'
-        },
-        multiple: false
+        }
     });
 
     mediaUploader.on('select', function() {
         var attachment = mediaUploader.state().get('selection').first().toJSON();
-        $('#video_url').val(attachment.url);
-        $('#video-preview').html('<video width="320" height="240" controls><source src="' + attachment.url + '" type="' + attachment.mime + '"></video>');
+        $('#gma-video-url').val(attachment.url);
+        $('#gma-video-preview').html(
+            '<video controls width="300" preload="metadata">' +
+            '<source src="' + attachment.url + '" type="video/mp4">' +
+            '</video>'
+        );
     });
 
     mediaUploader.open();
