@@ -43,22 +43,23 @@ function gma_criar_tabelas() {
     ) $charset_collate;";
 
     // SQL para tabela de materiais atualizada
-    $sql_materiais = "CREATE TABLE $tabela_materiais (
-        id mediumint(9) NOT NULL AUTO_INCREMENT,
-        campanha_id mediumint(9) NOT NULL,
-        imagem_url varchar(255) NOT NULL,
-        copy text NOT NULL,
+    $sql_materiais = "CREATE TABLE IF NOT EXISTS {$wpdb->prefix}gma_materiais (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        campanha_id bigint(20) NOT NULL,
+        imagem_url varchar(255),
+        video_url varchar(255),
+        tipo_midia varchar(20) NOT NULL DEFAULT 'imagem',
+        copy text,
         link_canva varchar(255),
-        arquivo_id bigint(20) unsigned DEFAULT NULL,
-        status_aprovacao VARCHAR(20) NOT NULL DEFAULT 'pendente',
-        feedback TEXT,
+        arquivo_id bigint(20),
+        pasta_id bigint(20),
+        status_aprovacao varchar(20) DEFAULT 'pendente',
+        feedback text,
         data_criacao datetime DEFAULT CURRENT_TIMESTAMP,
-        pasta_id mediumint(9) DEFAULT NULL,
-        tipo_midia varchar(50) DEFAULT 'imagem',
-        versao_atual int DEFAULT 1,
-        PRIMARY KEY (id),
-        FOREIGN KEY (campanha_id) REFERENCES $tabela_campanhas(id) ON DELETE CASCADE,
-        FOREIGN KEY (pasta_id) REFERENCES $tabela_pastas(id) ON DELETE SET NULL
+        data_modificacao datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY  (id),
+        KEY campanha_id (campanha_id),
+        KEY pasta_id (pasta_id)
     ) $charset_collate;";
 
     // SQL para tabela de estatísticas
@@ -159,7 +160,7 @@ function gma_criar_tabelas() {
  */
 function gma_verificar_versao_banco() {
     $versao_atual = get_option('gma_db_version', '1.0');
-    $nova_versao = '2.0';
+    $nova_versao = '2.1'; // Aumentar a versão
     
     if (version_compare($versao_atual, $nova_versao, '<')) {
         gma_criar_tabelas();
