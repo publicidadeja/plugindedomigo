@@ -5,56 +5,79 @@ function gma_criar_material($campanha_id, $imagem_url, $copy, $link_canva = '', 
     global $wpdb;
     $tabela = $wpdb->prefix . 'gma_materiais';
 
-    // Inicia a transação
-    $wpdb->query('START TRANSACTION');
+    $dados = array(
+        'campanha_id' => $campanha_id,
+        'copy' => $copy,
+        'link_canva' => $link_canva,
+        'arquivo_id' => $arquivo_id,
+        'status_aprovacao' => 'pendente',
+        'tipo_midia' => $tipo_midia,
+        'data_criacao' => current_time('mysql')
+    );
 
-    try {
-        // Verifica se o material já existe
-        if (gma_verificar_material_existente($campanha_id, $imagem_url, $copy, $link_canva)) {
-            $wpdb->query('ROLLBACK');
-            return false; // Material já existe
+    // Adiciona URL baseado no tipo de mídia
+    if ($tipo_midia === 'video') {
+        $dados['video_url'] = $video_url;
+        $dados['imagem_url'] = ''; // Campo vazio para vídeos
+    } else {
+        $dados['imagem_url'] = $imagem_url;
+        $dados['video_url'] = ''; // Campo vazio para imagens
+    }
+
+    $resultado = $wpdb->insert($tabela, $dados);
+    return $resultado ? $wpdb->insert_id : false;
+}
+
+function gma_render_material_preview($material) {
+    ob_start();
+    
+    if ($material->tipo_midia === 'video') {
+        if (!empty($material->video_url)) {
+            echo '<div class="gma-video-preview">';
+            echo '<video controls width="100%">';
+            echo '<source src="' . esc_url($material->video_url) . '" type="video/mp4">';
+            echo 'Seu navegador não suporta o elemento de vídeo.';
+            echo '</video>';
+            echo '</div>';
         }
-
-        $dados = array(
-            'campanha_id' => $campanha_id,
-            'imagem_url' => $imagem_url,
-            'copy' => $copy,
-            'link_canva' => $link_canva,
-            'arquivo_id' => $arquivo_id,
-            'status_aprovacao' => 'pendente',
-            'tipo_midia' => $tipo_midia,
-            'video_url' => $video_url,
-            'data_criacao' => current_time('mysql')
-        );
-
-        $formatos = array(
-            '%d', // campanha_id
-            '%s', // imagem_url
-            '%s', // copy
-            '%s', // link_canva
-            '%d', // arquivo_id
-            '%s', // status_aprovacao
-            '%s', // tipo_midia
-            '%s', // video_url
-            '%s'  // data_criacao
-        );
-
-        $resultado = $wpdb->insert($tabela, $dados, $formatos);
-        $insert_id = $wpdb->insert_id;
-
-        if ($resultado && $insert_id) {
-            $wpdb->query('COMMIT');
-            return $insert_id;
-        } else {
-            $wpdb->query('ROLLBACK');
-            return false;
+    } else {
+        if (!empty($material->imagem_url)) {
+            echo '<div class="gma-image-preview">';
+            echo '<img src="' . esc_url($material->imagem_url) . '" alt="Preview do Material">';
+            echo '</div>';
         }
-    } catch (Exception $e) {
-        $wpdb->query('ROLLBACK');
-        error_log('Erro ao criar material: ' . $e->getMessage());
-        return false;
+    }
+    
+    return ob_get_clean();
+}
+
+function gma_handle_criar_material() {
+    check_ajax_referer('gma_novo_material', 'nonce');
+    
+    $campanha_id = intval($_POST['campanha_id']);
+    $tipo_midia = sanitize_text_field($_POST['tipo_midia']);
+    $copy = sanitize_textarea_field($_POST['copy']);
+    $link_canva = isset($_POST['link_canva']) ? esc_url_raw($_POST['link_canva']) : '';
+    
+    if ($tipo_midia === 'imagem') {
+        $midias = sanitize_url($_POST['imagem_url']);
+    } elseif ($tipo_midia === 'video') {
+        $midias = sanitize_url($_POST['video_url']);
+    } else {
+        $midias = array_map('sanitize_url', $_POST['carrossel_images']);
+    }
+    
+    $resultado = gma_criar_material($campanha_id, $midias, $copy, $link_canva, $tipo_midia);
+    
+    if ($resultado) {
+        wp_send_json_success(array(
+            'redirect' => admin_url('admin.php?page=gma-materiais&message=created')
+        ));
+    } else {
+        wp_send_json_error(array('message' => 'Erro ao criar material'));
     }
 }
+add_action('wp_ajax_gma_criar_material', 'gma_handle_criar_material');
 
 function gma_verificar_material_existente($campanha_id, $imagem_url, $copy, $link_canva) {
     global $wpdb;
@@ -217,9 +240,7 @@ function gma_exibir_materiais_campanha($campanha_id) {
         echo '<div class="gma-materiais">';
         foreach ($materiais as $material) {
             echo '<div class="gma-material">';
-            if (!empty($material->imagem_url)) {
-                echo '<img src="' . esc_url($material->imagem_url) . '" alt="Material">';
-            }
+            echo gma_render_material_preview($material);
             if (!empty($material->copy)) {
                 echo '<p>' . wp_kses_post($material->copy) . '</p>';
             }
@@ -618,6 +639,26 @@ function gma_criar_versao_material($material_id, $nova_url, $descricao) {
     ));
 }
 
+
+// Adicionar em materiais.php se ainda não existir
+function gma_obter_imagens_carrossel($material_id) {
+    global $wpdb;
+    
+    $query = $wpdb->prepare(
+        "SELECT imagem_url, ordem
+         FROM {$wpdb->prefix}gma_materiais
+         WHERE id = %d OR material_principal_id = %d
+         ORDER BY ordem ASC",
+        $material_id,
+        $material_id
+    );
+    
+    error_log("Query carrossel: " . $query);
+    $resultados = $wpdb->get_results($query);
+    error_log("Resultados carrossel: " . print_r($resultados, true));
+    
+    return $resultados;
+}
 // Função para exibir a notificação no painel do admin
 function gma_exibir_notificacao_admin($mensagem, $tipo = 'success') {
     // Adicionar CSS para as notificações popup
@@ -766,5 +807,7 @@ add_action('wp_ajax_nopriv_gma_reprovar_material', 'gma_reprovar_material');
 add_action('wp_ajax_nopriv_gma_editar_material', 'gma_editar_material');
 add_action('wp_ajax_nopriv_gma_salvar_feedback', 'gma_salvar_feedback');
 add_action('wp_ajax_nopriv_gma_obter_material', 'gma_obter_material_ajax');
+add_action('wp_ajax_gma_criar_material', 'gma_handle_criar_material');
+
 
 ?>
