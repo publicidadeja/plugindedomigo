@@ -313,6 +313,29 @@ wp_localize_script('jquery', 'gma_ajax', array(
 #get-suggestions {
     margin-top: 10px;
 }
+  
+  #suggestions-container {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color);
+}
+
+#suggestions-content {
+    white-space: pre-line;
+    line-height: 1.6;
+    color: var(--text-color);
+    font-size: 14px;
+}
+
+.suggestions-error {
+    color: #dc3545;
+    padding: 10px;
+    border-radius: 4px;
+    background: #fff;
+    margin-top: 10px;
+}
 </style>
 
 <script>
@@ -422,41 +445,43 @@ jQuery(document).ready(function($) {
     });
 
     // Sugestões AI
-    $('#get-suggestions').on('click', function() {
-        const copy = $('#copy').val();
-        const button = $(this);
-        
-        if (!copy) {
-            alert('Por favor, insira algum texto primeiro.');
-            return;
-        }
-        
-        button.prop('disabled', true).text('Obtendo sugestões...');
-        
-        $.ajax({
-            url: gma_ajax.ajaxurl,
-            type: 'POST',
-            data: {
-                action: 'gma_get_copy_suggestions',
-                nonce: gma_ajax.nonce,
-                copy: copy
-            },
-            success: function(response) {
-                if (response.success) {
-                    $('#suggestions-content').html(response.data.suggestions);
-                    $('#suggestions-container').slideDown();
-                } else {
-                    alert('Falha ao obter sugestões. Tente novamente.');
-                }
-            },
-            error: function() {
-                alert('Erro ao conectar com o servidor.');
-            },
-            complete: function() {
-                button.prop('disabled', false).text('Obter Sugestões AI');
+$('#get-suggestions').on('click', function() {
+    const copy = $('#copy').val();
+    const button = $(this);
+    
+    if (!copy) {
+        alert('Por favor, insira algum texto primeiro.');
+        return;
+    }
+    
+    button.prop('disabled', true).text('Obtendo sugestões...');
+    
+    $.ajax({
+        url: gma_ajax.ajaxurl,
+        type: 'POST',
+        data: {
+            action: 'gma_get_copy_suggestions',
+            nonce: gma_ajax.nonce,
+            copy: copy
+        },
+        success: function(response) {
+            console.log('Resposta da API:', response); // Debug
+            if (response.success && response.data && response.data.suggestions) {
+                $('#suggestions-content').html(response.data.suggestions);
+                $('#suggestions-container').slideDown();
+            } else {
+                alert('Falha ao obter sugestões: ' + (response.data ? response.data.message : 'Erro desconhecido'));
             }
-        });
+        },
+        error: function(xhr, status, error) {
+            console.error('Erro AJAX:', error); // Debug
+            alert('Erro ao conectar com o servidor. Por favor, tente novamente.');
+        },
+        complete: function() {
+            button.prop('disabled', false).text('Obter Sugestões AI');
+        }
     });
+});
 
     // Validação do formulário
     $('#gma-material-form').on('submit', function(e) {
